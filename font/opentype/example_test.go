@@ -11,10 +11,10 @@ import (
 	"log"
 	"os"
 
-	"golang.org/x/image/font"
-	"golang.org/x/image/font/gofont/goitalic"
-	"golang.org/x/image/font/opentype"
-	"golang.org/x/image/math/fixed"
+	"github.com/gracefulearth/image/font"
+	"github.com/gracefulearth/image/font/gofont/goitalic"
+	"github.com/gracefulearth/image/font/opentype"
+	"github.com/gracefulearth/image/math/fixed"
 )
 
 func ExampleNewFace() {

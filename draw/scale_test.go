@@ -15,7 +15,7 @@ import (
 	"os"
 	"testing"
 
-	"golang.org/x/image/math/f64"
+	"github.com/gracefulearth/image/math/f64"
 
 	_ "image/jpeg"
 )

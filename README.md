@@ -1,6 +1,6 @@
 # Go Images
 
-[![Go Reference](https://pkg.go.dev/badge/golang.org/x/image.svg)](https://pkg.go.dev/golang.org/x/image)
+[![Go Reference](https://pkg.go.dev/badge/github.com/gracefulearth/image.svg)](https://pkg.go.dev/github.com/gracefulearth/image)
 
 This repository holds supplementary Go image packages.
 

@@ -28,7 +28,7 @@ func main() {
 		"\"image/color\"\n" +
 		"\"math\"\n" +
 		"\n" +
-		"\"golang.org/x/image/math/f64\"\n" +
+		"\"github.com/gracefulearth/image/math/f64\"\n" +
 		")\n")
 
 	gen(w, "nnInterpolator", codeNNScaleLeaf, codeNNTransformLeaf)
