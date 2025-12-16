@@ -17,6 +17,7 @@ import (
 	"io"
 	"math"
 
+	colorext "github.com/gracefulearth/go-colorext"
 	"github.com/gracefulearth/image/ccitt"
 	"github.com/gracefulearth/image/tiff/lzw"
 )
@@ -304,21 +305,41 @@ func (d *decoder) decode(dst image.Image, xmin, ymin, xmax, ymax int) error {
 	switch d.mode {
 	case mGray, mGrayInvert:
 		if d.bpp == 16 {
-			img := dst.(*image.Gray16)
-			for y := ymin; y < rMaxY; y++ {
-				for x := xmin; x < rMaxX; x++ {
-					if d.off+2 > len(d.buf) {
-						return errNoPixels
+			if d.features[tSampleFormat][0] == 2 {
+				img := dst.(*colorext.GrayS16Image)
+				for y := ymin; y < rMaxY; y++ {
+					for x := xmin; x < rMaxX; x++ {
+						if d.off+2 > len(d.buf) {
+							return errNoPixels
+						}
+						v := int16(d.byteOrder.Uint16(d.buf[d.off : d.off+2]))
+						d.off += 2
+						if d.mode == mGrayInvert {
+							v = math.MaxInt16 - v
+						}
+						img.SetGrayS16(x, y, colorext.GrayS16{Y: v})
 					}
-					v := d.byteOrder.Uint16(d.buf[d.off : d.off+2])
-					d.off += 2
-					if d.mode == mGrayInvert {
-						v = 0xffff - v
+					if rMaxX == img.Bounds().Max.X {
+						d.off += 2 * (xmax - img.Bounds().Max.X)
 					}
-					img.SetGray16(x, y, color.Gray16{v})
 				}
-				if rMaxX == img.Bounds().Max.X {
-					d.off += 2 * (xmax - img.Bounds().Max.X)
+			} else {
+				img := dst.(*image.Gray16)
+				for y := ymin; y < rMaxY; y++ {
+					for x := xmin; x < rMaxX; x++ {
+						if d.off+2 > len(d.buf) {
+							return errNoPixels
+						}
+						v := d.byteOrder.Uint16(d.buf[d.off : d.off+2])
+						d.off += 2
+						if d.mode == mGrayInvert {
+							v = 0xffff - v
+						}
+						img.SetGray16(x, y, color.Gray16{v})
+					}
+					if rMaxX == img.Bounds().Max.X {
+						d.off += 2 * (xmax - img.Bounds().Max.X)
+					}
 				}
 			}
 		} else {
@@ -506,6 +527,10 @@ func newDecoder(r io.Reader) (*decoder, error) {
 		// Default is 1 per specification.
 		d.features[tBitsPerSample] = []uint{1}
 	}
+	if _, ok := d.features[tSampleFormat]; !ok {
+		// Default is 1 (unsigned integer) per specification.
+		d.features[tSampleFormat] = []uint{1}
+	}
 	d.bpp = d.firstVal(tBitsPerSample)
 	switch d.bpp {
 	case 0:
@@ -574,14 +599,22 @@ func newDecoder(r io.Reader) (*decoder, error) {
 	case pWhiteIsZero:
 		d.mode = mGrayInvert
 		if d.bpp == 16 {
-			d.config.ColorModel = color.Gray16Model
+			if d.features[tSampleFormat][0] == 2 {
+				d.config.ColorModel = colorext.GrayS16Model
+			} else {
+				d.config.ColorModel = color.Gray16Model
+			}
 		} else {
 			d.config.ColorModel = color.GrayModel
 		}
 	case pBlackIsZero:
 		d.mode = mGray
 		if d.bpp == 16 {
-			d.config.ColorModel = color.Gray16Model
+			if d.features[tSampleFormat][0] == 2 {
+				d.config.ColorModel = colorext.GrayS16Model
+			} else {
+				d.config.ColorModel = color.Gray16Model
+			}
 		} else {
 			d.config.ColorModel = color.GrayModel
 		}
@@ -682,7 +715,11 @@ func Decode(r io.Reader) (img image.Image, err error) {
 	switch d.mode {
 	case mGray, mGrayInvert:
 		if d.bpp == 16 {
-			img = image.NewGray16(imgRect)
+			if d.features[tSampleFormat][0] == 2 {
+				img = colorext.NewGrayS16Image(imgRect)
+			} else {
+				img = image.NewGray16(imgRect)
+			}
 		} else {
 			img = image.NewGray(imgRect)
 		}
