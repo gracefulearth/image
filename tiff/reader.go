@@ -305,7 +305,7 @@ func (d *decoder) decode(dst image.Image, xmin, ymin, xmax, ymax int) error {
 	switch d.mode {
 	case mGray, mGrayInvert:
 		if d.bpp == 16 {
-			if d.features[tSampleFormat][0] == 2 {
+			if d.firstVal(tSampleFormat) == 2 {
 				img := dst.(*colorext.GrayS16Image)
 				for y := ymin; y < rMaxY; y++ {
 					for x := xmin; x < rMaxX; x++ {
@@ -527,10 +527,6 @@ func newDecoder(r io.Reader) (*decoder, error) {
 		// Default is 1 per specification.
 		d.features[tBitsPerSample] = []uint{1}
 	}
-	if _, ok := d.features[tSampleFormat]; !ok {
-		// Default is 1 (unsigned integer) per specification.
-		d.features[tSampleFormat] = []uint{1}
-	}
 	d.bpp = d.firstVal(tBitsPerSample)
 	switch d.bpp {
 	case 0:
@@ -599,7 +595,7 @@ func newDecoder(r io.Reader) (*decoder, error) {
 	case pWhiteIsZero:
 		d.mode = mGrayInvert
 		if d.bpp == 16 {
-			if d.features[tSampleFormat][0] == 2 {
+			if d.firstVal(tSampleFormat) == 2 {
 				d.config.ColorModel = colorext.GrayS16Model
 			} else {
 				d.config.ColorModel = color.Gray16Model
@@ -610,7 +606,7 @@ func newDecoder(r io.Reader) (*decoder, error) {
 	case pBlackIsZero:
 		d.mode = mGray
 		if d.bpp == 16 {
-			if d.features[tSampleFormat][0] == 2 {
+			if d.firstVal(tSampleFormat) == 2 {
 				d.config.ColorModel = colorext.GrayS16Model
 			} else {
 				d.config.ColorModel = color.Gray16Model
@@ -715,7 +711,7 @@ func Decode(r io.Reader) (img image.Image, err error) {
 	switch d.mode {
 	case mGray, mGrayInvert:
 		if d.bpp == 16 {
-			if d.features[tSampleFormat][0] == 2 {
+			if d.firstVal(tSampleFormat) == 2 {
 				img = colorext.NewGrayS16Image(imgRect)
 			} else {
 				img = image.NewGray16(imgRect)
