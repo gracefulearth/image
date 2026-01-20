@@ -73,10 +73,7 @@ func safeReadAt(r io.ReaderAt, n uint64, off int64) ([]byte, error) {
 	var buf []byte
 	buf1 := make([]byte, maxChunkSize)
 	for n > 0 {
-		next := n
-		if next > maxChunkSize {
-			next = maxChunkSize
-		}
+		next := min(n, maxChunkSize)
 		_, err := r.ReadAt(buf1[:next], off)
 		if err != nil {
 			return nil, err
@@ -143,15 +140,15 @@ func (d *decoder) ifdUint(p []byte) (u []uint, err error) {
 	u = make([]uint, count)
 	switch datatype {
 	case dtByte:
-		for i := uint32(0); i < count; i++ {
+		for i := range count {
 			u[i] = uint(raw[i])
 		}
 	case dtShort:
-		for i := uint32(0); i < count; i++ {
+		for i := range count {
 			u[i] = uint(d.byteOrder.Uint16(raw[2*i : 2*(i+1)]))
 		}
 	case dtLong:
-		for i := uint32(0); i < count; i++ {
+		for i := range count {
 			u[i] = uint(d.byteOrder.Uint32(raw[4*i : 4*(i+1)]))
 		}
 	default:
@@ -216,7 +213,7 @@ func (d *decoder) parseIFD(p []byte) (int, error) {
 			return 0, err
 		}
 		for _, v := range val {
-			if v != 1 && v != 2 {
+			if v != 1 && v != 2 && v != 3 {
 				return 0, UnsupportedError("sample format")
 			}
 		}
@@ -267,6 +264,8 @@ func (d *decoder) decode(dst image.Image, xmin, ymin, xmax, ymax int) error {
 	// See page 64-65 of the spec.
 	if d.firstVal(tPredictor) == prHorizontal {
 		switch d.bpp {
+		case 32:
+			return UnsupportedError("horizontal predictor with 32 BitsPerSample")
 		case 16:
 			var off int
 			n := 2 * len(d.features[tBitsPerSample]) // bytes per sample times samples per pixel
@@ -304,7 +303,30 @@ func (d *decoder) decode(dst image.Image, xmin, ymin, xmax, ymax int) error {
 	rMaxY := minInt(ymax, dst.Bounds().Max.Y)
 	switch d.mode {
 	case mGray, mGrayInvert:
-		if d.bpp == 16 {
+		switch d.bpp {
+		case 32:
+			if d.firstVal(tSampleFormat) == 3 {
+				img := dst.(*colorext.GrayF32Image)
+				for y := ymin; y < rMaxY; y++ {
+					for x := xmin; x < rMaxX; x++ {
+						if d.off+4 > len(d.buf) {
+							return errNoPixels
+						}
+						v := math.Float32frombits(d.byteOrder.Uint32(d.buf[d.off : d.off+4]))
+						d.off += 4
+						if d.mode == mGrayInvert {
+							v = -v
+						}
+						img.SetGrayF32(x, y, colorext.GrayF32{Y: v})
+					}
+					if rMaxX == img.Bounds().Max.X {
+						d.off += 4 * (xmax - img.Bounds().Max.X)
+					}
+				}
+			} else {
+				return UnsupportedError("32 BitsPerSample with non-float SampleFormat")
+			}
+		case 16:
 			if d.firstVal(tSampleFormat) == 2 {
 				img := dst.(*colorext.GrayS16Image)
 				for y := ymin; y < rMaxY; y++ {
@@ -342,7 +364,7 @@ func (d *decoder) decode(dst image.Image, xmin, ymin, xmax, ymax int) error {
 					}
 				}
 			}
-		} else {
+		default:
 			img := dst.(*image.Gray)
 			max := uint32((1 << d.bpp) - 1)
 			for y := ymin; y < rMaxY; y++ {
@@ -531,7 +553,7 @@ func newDecoder(r io.Reader) (*decoder, error) {
 	switch d.bpp {
 	case 0:
 		return nil, FormatError("BitsPerSample must not be 0")
-	case 1, 8, 16:
+	case 1, 8, 16, 32:
 		// Nothing to do, these are accepted by this implementation.
 	default:
 		return nil, UnsupportedError(fmt.Sprintf("BitsPerSample of %v", d.bpp))
@@ -594,24 +616,38 @@ func newDecoder(r io.Reader) (*decoder, error) {
 		d.config.ColorModel = color.Palette(d.palette)
 	case pWhiteIsZero:
 		d.mode = mGrayInvert
-		if d.bpp == 16 {
+		switch d.bpp {
+		case 32:
+			if d.firstVal(tSampleFormat) == 3 {
+				d.config.ColorModel = colorext.GrayF32Model
+			} else {
+				return nil, UnsupportedError("32 BitsPerSample with non-float SampleFormat")
+			}
+		case 16:
 			if d.firstVal(tSampleFormat) == 2 {
 				d.config.ColorModel = colorext.GrayS16Model
 			} else {
 				d.config.ColorModel = color.Gray16Model
 			}
-		} else {
+		default:
 			d.config.ColorModel = color.GrayModel
 		}
 	case pBlackIsZero:
 		d.mode = mGray
-		if d.bpp == 16 {
+		switch d.bpp {
+		case 32:
+			if d.firstVal(tSampleFormat) == 3 {
+				d.config.ColorModel = colorext.GrayF32Model
+			} else {
+				return nil, UnsupportedError("32 BitsPerSample with non-float SampleFormat")
+			}
+		case 16:
 			if d.firstVal(tSampleFormat) == 2 {
 				d.config.ColorModel = colorext.GrayS16Model
 			} else {
 				d.config.ColorModel = color.Gray16Model
 			}
-		} else {
+		default:
 			d.config.ColorModel = color.GrayModel
 		}
 	default:
@@ -710,13 +746,20 @@ func Decode(r io.Reader) (img image.Image, err error) {
 	imgRect := image.Rect(0, 0, d.config.Width, d.config.Height)
 	switch d.mode {
 	case mGray, mGrayInvert:
-		if d.bpp == 16 {
+		switch d.bpp {
+		case 32:
+			if d.firstVal(tSampleFormat) == 3 {
+				img = colorext.NewGrayF32Image(imgRect)
+			} else {
+				return nil, UnsupportedError("32 BitsPerSample with non-float SampleFormat")
+			}
+		case 16:
 			if d.firstVal(tSampleFormat) == 2 {
 				img = colorext.NewGrayS16Image(imgRect)
 			} else {
 				img = image.NewGray16(imgRect)
 			}
-		} else {
+		default:
 			img = image.NewGray(imgRect)
 		}
 	case mPaletted:
